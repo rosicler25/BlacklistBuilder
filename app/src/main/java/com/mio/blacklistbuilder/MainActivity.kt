@@ -24,7 +24,8 @@ import android.widget.Toast
 import java.io.File
 import java.io.FileInputStream
 import java.util.Locale
-import java.util.zip.GZIPOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class MainActivity : Activity() {
 
@@ -100,7 +101,7 @@ class MainActivity : Activity() {
             setOnClickListener {
                 exportEmptyDb = false
                 val safeName = selectedGroupName.lowercase(Locale.ITALIAN).replace(" ", "_")
-                askWhereToSaveFile("backup_$safeName.gzz")
+                askWhereToSaveFile("CallFilter_backup_$safeName.gzz")
             }
         }
 
@@ -115,7 +116,7 @@ class MainActivity : Activity() {
             setPadding(30, 40, 30, 40)
             setOnClickListener {
                 exportEmptyDb = true
-                askWhereToSaveFile("backup_vuoto.gzz")
+                askWhereToSaveFile("CallFilter_backup_vuoto.gzz")
             }
         }
 
@@ -191,7 +192,6 @@ class MainActivity : Activity() {
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, availableGroups)
         groupSpinner.adapter = adapter
 
-        // Seleziona automaticamente "Lavoro" se esiste (altrimenti mantiene la selezione attuale)
         val targetIndex = availableGroups.indexOfFirst { it.equals(selectedGroupName, ignoreCase = true) }
             .takeIf { it >= 0 }
             ?: availableGroups.indexOfFirst { it.equals("Lavoro", ignoreCase = true) }
@@ -212,7 +212,6 @@ class MainActivity : Activity() {
         btnGenerateGroup.text = "ESPORTA '$selectedGroupName' (.gzz)"
     }
 
-    // Estrae (NumeroNormalizzato, NomeContatto) per l'etichetta scelta
     private fun getPhoneNumbersForGroup(groupName: String): List<Pair<String, String>> {
         val groupIds = mutableSetOf<String>()
         contentResolver.query(
@@ -324,6 +323,7 @@ class MainActivity : Activity() {
             db.disableWriteAheadLogging()
             db.rawQuery("PRAGMA journal_mode=DELETE", null).close()
             db.setLocale(Locale("it", "IT"))
+            db.version = 3 // FONDAMENTALE: imposta PRAGMA user_version = 3!
 
             // Crea la tabella bwDB (e in automatico sqlite_sequence)
             db.execSQL("CREATE TABLE bwDB(id INTEGER PRIMARY KEY AUTOINCREMENT,phone TEXT,type INTEGER,name TEXT,comment TEXT)")
@@ -331,7 +331,7 @@ class MainActivity : Activity() {
             var count = 0
             if (!isEmptyDb) {
                 val numbers = getPhoneNumbersForGroup(selectedGroupName)
-                val commentNote = selectedGroupName // Salva esattamente il nome dell'etichetta
+                val commentNote = selectedGroupName
 
                 db.beginTransaction()
                 try {
@@ -352,12 +352,15 @@ class MainActivity : Activity() {
 
             db.close()
 
-            // Comprime il database SQLite in formato .gzz
+            // Comprime il file chiamato "bwDB" in un archivio ZIP con estensione .gzz
             contentResolver.openOutputStream(destinationUri)?.use { outStream ->
-                GZIPOutputStream(outStream).use { gzipOut ->
+                ZipOutputStream(outStream).use { zipOut ->
+                    val zipEntry = ZipEntry("bwDB")
+                    zipOut.putNextEntry(zipEntry)
                     FileInputStream(tempDbFile).use { fileIn ->
-                        fileIn.copyTo(gzipOut)
+                        fileIn.copyTo(zipOut)
                     }
+                    zipOut.closeEntry()
                 }
             }
 
