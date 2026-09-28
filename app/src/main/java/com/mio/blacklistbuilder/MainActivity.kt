@@ -52,7 +52,7 @@ class MainActivity : Activity() {
         }
 
         val titleText = TextView(this).apply {
-            text = "BlacklistBuilder"
+            text = "BlacklistBuilder v1.0"
             textSize = 24f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
@@ -162,19 +162,40 @@ class MainActivity : Activity() {
 
     private fun loadAvailableGroups() {
         val groupsSet = sortedSetOf<String>(String.CASE_INSENSITIVE_ORDER)
+        val hiddenSystemTitles = setOf(
+            "My Contacts", "Starred in Android", "ICE",
+            "Coworkers", "Family", "Friends"
+        )
 
         contentResolver.query(
             ContactsContract.Groups.CONTENT_URI,
-            arrayOf(ContactsContract.Groups.TITLE, ContactsContract.Groups.DELETED),
+            arrayOf(
+                ContactsContract.Groups.TITLE,
+                ContactsContract.Groups.DELETED,
+                ContactsContract.Groups.SYSTEM_ID,
+                ContactsContract.Groups.FAVORITES,
+                ContactsContract.Groups.AUTO_ADD
+            ),
             null, null, null
         )?.use { cursor ->
             val titleIdx = cursor.getColumnIndex(ContactsContract.Groups.TITLE)
             val deletedIdx = cursor.getColumnIndex(ContactsContract.Groups.DELETED)
+            val sysIdIdx = cursor.getColumnIndex(ContactsContract.Groups.SYSTEM_ID)
+            val favIdx = cursor.getColumnIndex(ContactsContract.Groups.FAVORITES)
+            val autoAddIdx = cursor.getColumnIndex(ContactsContract.Groups.AUTO_ADD)
+
             while (cursor.moveToNext()) {
                 val isDeleted = if (deletedIdx != -1) cursor.getInt(deletedIdx) == 1 else false
+                val systemId = if (sysIdIdx != -1) cursor.getString(sysIdIdx) else null
+                val isFav = if (favIdx != -1) cursor.getInt(favIdx) == 1 else false
+                val isAutoAdd = if (autoAddIdx != -1) cursor.getInt(autoAddIdx) == 1 else false
                 val title = if (titleIdx != -1) cursor.getString(titleIdx)?.trim() else null
-                if (!isDeleted && !title.isNullOrEmpty()) {
-                    groupsSet.add(title)
+
+                // Filtra tutte le etichette di sistema nascoste, mostra solo quelle create dall'utente
+                if (!isDeleted && !isFav && !isAutoAdd && systemId.isNullOrEmpty() && !title.isNullOrEmpty()) {
+                    if (hiddenSystemTitles.none { it.equals(title, ignoreCase = true) }) {
+                        groupsSet.add(title)
+                    }
                 }
             }
         }
@@ -182,7 +203,7 @@ class MainActivity : Activity() {
         availableGroups = groupsSet.toList()
 
         if (availableGroups.isEmpty()) {
-            infoText.text = "⚠️ Nessuna etichetta trovata nella rubrica!"
+            infoText.text = "⚠️ Nessuna etichetta personalizzata trovata nella rubrica!"
             infoText.setTextColor(Color.RED)
             btnGenerateGroup.isEnabled = false
             return
@@ -323,7 +344,7 @@ class MainActivity : Activity() {
             db.disableWriteAheadLogging()
             db.rawQuery("PRAGMA journal_mode=DELETE", null).close()
             db.setLocale(Locale("it", "IT"))
-            db.version = 3 // FONDAMENTALE: imposta PRAGMA user_version = 3!
+            db.version = 3
 
             // Crea la tabella bwDB (e in automatico sqlite_sequence)
             db.execSQL("CREATE TABLE bwDB(id INTEGER PRIMARY KEY AUTOINCREMENT,phone TEXT,type INTEGER,name TEXT,comment TEXT)")
